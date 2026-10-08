@@ -1,0 +1,75 @@
+services:
+  # 1. Base de datos MongoDB con soporte geoespacial
+  mongodb:
+    image: mongo:6.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # 2. Dask Scheduler (Coordinador)
+  dask-scheduler:
+    image: ghcr.io/dask/dask:latest
+    container_name: dask-scheduler
+    command: dask-scheduler
+    ports:
+      - "8786:8786"
+      - "8787:8787"
+    volumes:
+      - .:/app
+
+  # Worker 1 de Dask
+  dask-worker-1:
+    image: ghcr.io/dask/dask:latest
+    container_name: dask-worker-1
+    command: dask-worker dask-scheduler:8786 --memory-limit 2GB
+    volumes:
+      - .:/app
+    depends_on:
+      - dask-scheduler
+
+  # Worker 2 de Dask
+  dask-worker-2:
+    image: ghcr.io/dask/dask:latest
+    container_name: dask-worker-2
+    command: dask-worker dask-scheduler:8786 --memory-limit 2GB
+    volumes:
+      - .:/app
+    depends_on:
+      - dask-scheduler
+
+  # 3. Apache Spark Master (Nodo principal con Web UI en puerto 8080)
+  spark-master:
+    image: apache/spark:3.4.3
+    container_name: spark-master
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+    command: /opt/spark/sbin/start-master.sh
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+  # Worker de Spark
+  spark-worker:
+    image: apache/spark:latest
+    container_name: spark-worker
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+    command: /opt/spark/sbin/start-worker.sh spark://spark-master:7077
+    depends_on:
+      - spark-master
+
+  # 4. API en Flask
+  flask-api:
+    build: ./api
+    container_name: flask-api
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/geo_database
+    depends_on:
+      - mongodb
+
+volumes:
+  mongo_data:
